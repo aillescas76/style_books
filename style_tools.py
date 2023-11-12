@@ -35,11 +35,30 @@ def download_png_image(name, url):
          # Handle exceptions raised by the requests library
          print(f"An error occurred while downloading the image: {e}")
 
+def generate_structure(base_name):
+     i = 0
+     img_path = f"{base_name}/img"
+     if os.path.isdir(base_name):
+          if os.path.isdir(img_path):
+               i = len(os.listdir(img_path))
+          else:
+               os.mkdir(img_path)
+     else:
+          os.mkdir(base_name)
+          os.mkdir(img_path)
+     if os.path.isfile(f"{base_name}/style_book_{base_name}.json"):
+          with open(f"{base_name}/style_book_{base_name}.json") as f:
+               style_book = json.load(f)
+     else:
+          style_book = {}
+     if not "urls" in style_book:
+          style_book["urls"] = []
+     return i, style_book
 
 def generate_style(initial_prompt: str, base_name:str, num_iterations: int=50):
-     style_book = {}
-     i = 0
-     while i < num_iterations:
+     i, style_book = generate_structure(base_name)
+     end_iteration = i + num_iterations
+     while i < end_iteration:
          print("Generation", i)
          try:
              result = client.images.generate(model="dall-e-3", prompt=initial_prompt)
@@ -49,12 +68,13 @@ def generate_style(initial_prompt: str, base_name:str, num_iterations: int=50):
          except:
              print("Bad request")
              continue
-         current_name = f"{base_name}_{i:0>{len(str(num_iterations))}}"
+         current_name = f"{base_name}/img/{base_name}_{i:0>{len(str(num_iterations))}}"
          image = result.data[0]
-         download_png_image(current_name, image.url)
-         style_book[current_name] = str(image.revised_prompt)
-         with open(f"style_book_{base_name}.json", "w") as style_book_file:
+         style_book[current_name.split("/")[-1]] = str(image.revised_prompt)
+         style_book["urls"].append(image.url)
+         with open(f"{base_name}/style_book_{base_name}.json", "w") as style_book_file:
              style_book_file.write(json.dumps(style_book))
+         download_png_image(current_name, image.url)
          time.sleep(1)
          i += 1
 
@@ -75,7 +95,9 @@ def generate_markdown(directory_path, output_filename='README.md'):
      file_descriptions = json.load(open(descriptor_file, "r"))
      directory_path = os.path.join(directory_path, "img")
      # Add images and descriptions to markdown content
-     for filename in os.listdir(directory_path):
+     files = os.listdir(directory_path)
+     files.sort()
+     for filename in files:
          file_path = os.path.join(directory_path, filename)
          # Check if the current file is a file and not a directory
          if os.path.isfile(file_path):
