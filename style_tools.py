@@ -1,13 +1,16 @@
+import asyncio
 import json
 import os
 import time
+from typing import Tuple
+from openai.types import ImagesResponse
 
 import requests
 import openai
 from dotenv import load_dotenv
 
 load_dotenv(".env")
-client = openai.OpenAI()
+client = openai.AsyncOpenAI()
 
  
 def download_png_image(name, url):
@@ -55,28 +58,36 @@ def generate_structure(base_name):
           style_book["urls"] = []
      return i, style_book
 
+
+async def generate_image(order: int, prompt: str) -> Tuple[int, openai.types.ImagesResponse]:
+     print("Generating image", order)
+     image = await client.images.generate(model="dall-e-3", prompt=prompt)
+     print("Generated image", order)
+     return (order, image)
+
+async def generate_images(num_iterations: int, prompt: str):
+     result = await asyncio.gather(*[generate_image(order, prompt) for order in range(num_iterations)])
+     return result
+
 def generate_style(initial_prompt: str, base_name:str, num_iterations: int=50):
      i, style_book = generate_structure(base_name)
-     end_iteration = i + num_iterations
-     while i < end_iteration:
-         print("Generation", i)
-         try:
-             result = client.images.generate(model="dall-e-3", prompt=initial_prompt)
-         except KeyError:
-              print("User exit request")
-              return
-         except Exception as e:
-             print("Bad request", e)
-             continue
-         current_name = f"{base_name}/img/{base_name}_{i:0>{len(str(num_iterations))}}"
-         image = result.data[0]
-         style_book[current_name.split("/")[-1]] = str(image.revised_prompt)
-         style_book["urls"].append(image.url)
-         with open(f"{base_name}/style_book_{base_name}.json", "w") as style_book_file:
-             style_book_file.write(json.dumps(style_book))
-         download_png_image(current_name, image.url)
-         time.sleep(1)
-         i += 1
+     data = []
+     try:
+          data = asyncio.run(generate_images(num_iterations, initial_prompt))
+     except KeyError:
+          print("User exit request")
+     except Exception as e:
+          print("Bad request", e)
+     for (order, image_response) in data:
+          order = order + i
+          current_name = f"{base_name}/img/{base_name}_{order:0>{len(str(num_iterations))}}"
+          image = image_response.data[0]
+          style_book[current_name.split("/")[-1]] = str(image.revised_prompt)
+          style_book["urls"].append(image.url)
+          with open(f"{base_name}/style_book_{base_name}.json", "w") as style_book_file:
+               style_book_file.write(json.dumps(style_book))
+               download_png_image(current_name, image.url)
+
 
 def generate_markdown(directory_path, output_filename='README.md'):
      """
@@ -96,7 +107,7 @@ def generate_markdown(directory_path, output_filename='README.md'):
      directory_path = os.path.join(directory_path, "img")
      # Add images and descriptions to markdown content
      files = os.listdir(directory_path)
-     files.sort()
+     files.sort(key=lambda f: int(f.split('.')[0].split('_')[-1]))
      for filename in files:
          file_path = os.path.join(directory_path, filename)
          # Check if the current file is a file and not a directory
