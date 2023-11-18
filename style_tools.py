@@ -1,8 +1,8 @@
-import requests
 import json
 import os
 import time
 
+import requests
 import openai
 from dotenv import load_dotenv
 
@@ -65,8 +65,8 @@ def generate_style(initial_prompt: str, base_name:str, num_iterations: int=50):
          except KeyError:
               print("User exit request")
               return
-         except:
-             print("Bad request")
+         except Exception as e:
+             print("Bad request", e)
              continue
          current_name = f"{base_name}/img/{base_name}_{i:0>{len(str(num_iterations))}}"
          image = result.data[0]
