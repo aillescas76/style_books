@@ -123,3 +123,82 @@ def generate_markdown(directory_path, output_filename='README.md'):
      # Write the markdown content to the output file
      with open(output_filename, 'w') as markdown_file:
          markdown_file.write(markdown_content)
+
+
+def story_crafter(promt:str):
+     client = openai.AsyncOpenAI()
+     writer = agents["writer"]
+
+
+# Define sub-functions for clarity and code organization
+def send_to_openai(prompt, message, model="gpt-4-1106-preview", conversation="conversation.json") -> str:
+    """Send a message to OpenAI with the specified prompt."""
+    # Assume OpenAI has a f<unction named `openai.ChatCompletion.create` for sending messages
+    response = openai.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": message}
+        ]
+    )
+    add_to_conversation(conversation, response)
+    return str(response.choices[0].message.content)
+
+def add_to_conversation(conversation_file_name, gpt_response):
+     if os.path.isfile(conversation_file_name):
+          with open(conversation_file_name, "r") as f:
+               conversation = json.load(f)
+     else:
+          conversation = []
+
+     conversation.append(gpt_response.json)
+     with open(conversation_file_name, "w") as f:
+          f.write(json.dumps(conversation))
+
+def illustrate_character(characters, system_prompts) -> str:
+    """Send characters to OpenAI with the illustrator_character system prompt."""
+    return send_to_openai(system_prompts['illustrator_character'], characters)
+
+def illustrate_scene(characters, chapter_text, system_prompts) -> str:
+    """Send characters and chapter text to OpenAI with the illustrator_scene system prompt."""
+    scene_prompt = f"{characters}\n\n{chapter_text}"
+    return send_to_openai(system_prompts['illustrator_scene'], scene_prompt)
+
+# Main function to handle the conversation flow
+def craft_story(user_prompt):
+    """Handle the conversation flow as per the specified steps."""
+    with open("prompts.json", "r") as prompts_file:
+         system_prompts = json.load(prompts_file)
+    # Step 1: Send initial user prompt to the "writer"
+    writer_response = send_to_openai(system_prompts['writer'], user_prompt)
+
+    # Step 2: Send writer's response to the "critic"
+    critic_response = send_to_openai(system_prompts['critic'], writer_response)
+    review_prompt = "Rewrite the following story schema: '''{}'''  with this criticism: '''{}'''"
+
+    # Step 3: Send critic's response back to the "writer"
+    writer_followup_response = send_to_openai(
+         system_prompts['writer'], 
+         review_prompt.format(writer_response, critic_response),
+    )
+
+    # Step 4: Send the follow-up writer's response to the "editor"
+    editor_response = send_to_openai(system_prompts['editor'], writer_followup_response)
+    storys_data = json.loads(editor_response[7:-3])
+    # From the editor's response, extract characters and handle the chapter illustration
+    characters = storys_data["characters"]
+    story_context = storys_data["summary"]
+
+    characters_prompt = f"This is the list of characters: {characters} and a bit of context of the story: {story_context}"
+    # Step 5: Send characters to the "illustrator_character"
+    character_illustrations = illustrate_character(characters_prompt, system_prompts)
+    character_illustrations = character_illustrations[7:-3] 
+    # Step 6: For each chapter, send a request to OpenAI with the characters and the chapter text
+    # Extract chapters from the editor's response. Assuming chapters are separated by some delimiter
+    chapters = storys_data["chapters"]  # Replace with actual delimiter in the response
+    scene_illustrations = []
+    for chapter in chapters:
+        scene_illustrations.append(illustrate_scene(characters, chapter, system_prompts))
+
+    # Return the illustration results
+    return character_illustrations, scene_illustrations
