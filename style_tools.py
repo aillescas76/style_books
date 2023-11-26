@@ -10,7 +10,6 @@ import openai
 from dotenv import load_dotenv
 
 load_dotenv(".env")
-client = openai.AsyncOpenAI()
 
  
 def download_png_image(name, url):
@@ -61,6 +60,7 @@ def generate_structure(base_name):
 
 async def generate_image(order: int, prompt: str) -> Tuple[int, openai.types.ImagesResponse]:
      print("Generating image", order)
+     client = openai.AsyncOpenAI()
      image = await client.images.generate(model="dall-e-3", prompt=prompt)
      print("Generated image", order)
      return (order, image)
@@ -125,16 +125,12 @@ def generate_markdown(directory_path, output_filename='README.md'):
          markdown_file.write(markdown_content)
 
 
-def story_crafter(promt:str):
-     client = openai.AsyncOpenAI()
-     writer = agents["writer"]
-
-
 # Define sub-functions for clarity and code organization
 def send_to_openai(prompt, message, model="gpt-4-1106-preview", conversation="conversation.json") -> str:
     """Send a message to OpenAI with the specified prompt."""
     # Assume OpenAI has a f<unction named `openai.ChatCompletion.create` for sending messages
-    response = openai.chat.completions.create(
+    client = openai.OpenAI()
+    response = client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": prompt},
@@ -150,8 +146,7 @@ def add_to_conversation(conversation_file_name, gpt_response):
                conversation = json.load(f)
      else:
           conversation = []
-
-     conversation.append(gpt_response.json)
+     conversation.append(gpt_response.model_dump())
      with open(conversation_file_name, "w") as f:
           f.write(json.dumps(conversation))
 
@@ -161,8 +156,14 @@ def illustrate_character(characters, system_prompts) -> str:
 
 def illustrate_scene(characters, chapter_text, system_prompts) -> str:
     """Send characters and chapter text to OpenAI with the illustrator_scene system prompt."""
-    scene_prompt = f"{characters}\n\n{chapter_text}"
-    return send_to_openai(system_prompts['illustrator_scene'], scene_prompt)
+    scenes = send_to_openai(system_prompts['illustrator_scene'], chapter_text)
+
+    final_illustrations = send_to_openai(
+         system_prompts["character_integrator"], 
+         f"{characters}\n\n{scenes}",
+         model="gpt-3.5-turbo-16k"
+    )
+    return final_illustrations
 
 # Main function to handle the conversation flow
 def craft_story(user_prompt):
@@ -189,16 +190,27 @@ def craft_story(user_prompt):
     characters = storys_data["characters"]
     story_context = storys_data["summary"]
 
-    characters_prompt = f"This is the list of characters: {characters} and a bit of context of the story: {story_context}"
+    characters_prompt = f"This is the list of characters:\n{characters}\n\n And a bit of context of the story:\n{story_context}"
     # Step 5: Send characters to the "illustrator_character"
     character_illustrations = illustrate_character(characters_prompt, system_prompts)
     character_illustrations = character_illustrations[7:-3] 
     # Step 6: For each chapter, send a request to OpenAI with the characters and the chapter text
-    # Extract chapters from the editor's response. Assuming chapters are separated by some delimiter
-    chapters = storys_data["chapters"]  # Replace with actual delimiter in the response
+    # Extract chapters from the editor's response.
+    chapters = storys_data["chapters"]
     scene_illustrations = []
+    summaries = []
+    expanded_chapters = []
     for chapter in chapters:
-        scene_illustrations.append(illustrate_scene(characters, chapter, system_prompts))
+         chapter_prompt = f"This is the list of characters: {characters}\n\nThis the schema of the chapter:\n{chapter}"
+         if summaries:
+              chapter_prompt_final = chapter_prompt + f"\n\nTo keep the story coherent this is the summary of the previous chapters: \n {summaries}"
+         else:
+              chapter_prompt_final = chapter_prompt
+         extended_chapter = send_to_openai(system_prompts["writer_detailed"], chapter_prompt_final)
+         summary = send_to_openai("Make a summary of the following text:", extended_chapter)
+         summaries.append(summary)
+         expanded_chapters.append(extended_chapter)
+         scene_illustrations.append(illustrate_scene(character_illustrations, extended_chapter, system_prompts))
 
     # Return the illustration results
-    return character_illustrations, scene_illustrations
+    return character_illustrations, scene_illustrations, expanded_chapters
