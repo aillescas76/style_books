@@ -1,9 +1,7 @@
 import asyncio
 import json
 import os
-import time
 from typing import Tuple
-from openai.types import ImagesResponse
 
 import requests
 import openai
@@ -11,18 +9,18 @@ from dotenv import load_dotenv
 
 load_dotenv(".env")
 
- 
+
 def download_png_image(name, url):
-     """
-     Downloads a PNG image from a URL and saves it with a given name.
+    """
+    Downloads a PNG image from a URL and saves it with a given name.
      
-     :param name: Name of the file to save the image as (without extension).
-     :param url: URL of the image to download.
-     """
-     try:
+    :param name: Name of the file to save the image as (without extension).
+    :param url: URL of the image to download.
+    """
+    try:
          # Send a GET request to the URL
          response = requests.get(url, stream=True)
- 
+
          # Check if the request was successful
          if response.status_code == 200:
              # Open a file with the given name for writing in binary mode
@@ -33,7 +31,7 @@ def download_png_image(name, url):
          else:
              # Handle responses with error status codes
              print(f"Failed to download image. Status code: {response.status_code}")
-     except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException as e:
          # Handle exceptions raised by the requests library
          print(f"An error occurred while downloading the image: {e}")
 
@@ -197,9 +195,8 @@ def craft_story(user_prompt):
     # Step 6: For each chapter, send a request to OpenAI with the characters and the chapter text
     # Extract chapters from the editor's response.
     chapters = storys_data["chapters"]
-    scene_illustrations = []
     summaries = []
-    expanded_chapters = []
+    chapters_illustrated = []
     for chapter in chapters:
          chapter_prompt = f"This is the list of characters: {characters}\n\nThis the schema of the chapter:\n{chapter}"
          if summaries:
@@ -209,8 +206,15 @@ def craft_story(user_prompt):
          extended_chapter = send_to_openai(system_prompts["writer_detailed"], chapter_prompt_final)
          summary = send_to_openai("Make a summary of the following text:", extended_chapter)
          summaries.append(summary)
-         expanded_chapters.append(extended_chapter)
-         scene_illustrations.append(illustrate_scene(character_illustrations, extended_chapter, system_prompts))
+         scene_illustrations = illustrate_scene(character_illustrations, extended_chapter, system_prompts)
+         chapters_illustrated.append(
+             {
+                 "chapter_info": chapter,
+                 "chapter_extended": extended_chapter,
+                 "scenes": scene_illustrations,
+             }
+         )
+                           
 
     # Return the illustration results
-    return character_illustrations, scene_illustrations, expanded_chapters
+    return character_illustrations, chapters_illustrated
