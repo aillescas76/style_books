@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass
 import json
 import os
 from typing import Tuple
@@ -55,13 +56,23 @@ def generate_structure(base_name):
           style_book["urls"] = []
      return i, style_book
 
+@dataclass
+class ImageResult():
+    order: int
+    exception: Exception | None
+    image: openai.types.ImagesResponse | None
 
-async def generate_image(order: int, prompt: str) -> Tuple[int, openai.types.ImagesResponse]:
+async def generate_image(order: int, prompt: str) -> ImageResult:
      print("Generating image", order)
      client = openai.AsyncOpenAI()
-     image = await client.images.generate(model="dall-e-3", prompt=prompt)
+     exception = None
+     image_result = None
+     try:
+         image_result = await client.images.generate(model="dall-e-3", prompt=prompt)
+     except Exception as ex:
+         exception = ex
      print("Generated image", order)
-     return (order, image)
+     return ImageResult(order=order, exception=exception, image=image_result)
 
 async def generate_images(num_iterations: int, prompt: str):
      result = await asyncio.gather(*[generate_image(order, prompt) for order in range(num_iterations)])
@@ -76,15 +87,16 @@ def generate_style(initial_prompt: str, base_name:str, num_iterations: int=50):
           print("User exit request")
      except Exception as e:
           print("Bad request", e)
-     for (order, image_response) in data:
-          order = order + i
-          current_name = f"{base_name}/img/{base_name}_{order:0>{len(str(num_iterations))}}"
-          image = image_response.data[0]
-          style_book[current_name.split("/")[-1]] = str(image.revised_prompt)
-          style_book["urls"].append(image.url)
-          with open(f"{base_name}/style_book_{base_name}.json", "w") as style_book_file:
-               style_book_file.write(json.dumps(style_book))
-               download_png_image(current_name, image.url)
+     for image_response in data:
+          if image_response.image:
+              order = image_response.order + i
+              current_name = f"{base_name}/img/{base_name}_{order:0>{len(str(num_iterations))}}"
+              image = image_response.image.data[0]
+              style_book[current_name.split("/")[-1]] = str(image.revised_prompt)
+              style_book["urls"].append(image.url)
+              with open(f"{base_name}/style_book_{base_name}.json", "w") as style_book_file:
+                  style_book_file.write(json.dumps(style_book))
+                  download_png_image(current_name, image.url)
 
 
 def generate_markdown(directory_path, output_filename='README.md'):
